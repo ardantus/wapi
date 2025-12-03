@@ -75,6 +75,10 @@ typings/
 # local version cache
 .wwebjs_cache/
 
+# API server data and sessions (contains media files and authentication)
+examples/api-server/data/
+examples/api-server/sessions/
+
 # IDE's
 .idea
 .vscode

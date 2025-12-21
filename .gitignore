@@ -76,8 +76,8 @@ typings/
 .wwebjs_cache/
 
 # API server data and sessions (contains media files and authentication)
-examples/api-server/data/
-examples/api-server/sessions/
+data/
+sessions/
 
 # IDE's
 .idea

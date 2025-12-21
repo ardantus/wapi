@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Login - WhatsApp API</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body class="login-page">
+  <div class="login-card">
+    <div style="margin-bottom: 20px;">
+      <i class="fab fa-whatsapp" style="font-size: 3rem; color: #00a884;"></i>
+    </div>
+    <h3>Sign In</h3>
+    <form method="post" action="/login">
+      <div class="input-group-login">
+        <input name="username" placeholder="Username" required autocomplete="username">
+      </div>
+      <div class="input-group-login">
+        <input name="password" type="password" placeholder="Password" required autocomplete="current-password">
+      </div>
+      <button type="submit">LOGIN</button>
+    </form>
+    <div style="margin-top: 20px; font-size: 0.8rem; color: #667781;">
+      WhatsApp API Console
+    </div>
+  </div>
+</body>
+
+</html>

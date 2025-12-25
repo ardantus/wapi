@@ -30,6 +30,16 @@
   const searchMessages = document.getElementById('searchMessages');
   const messageSearchResult = document.getElementById('messageSearchResult');
 
+  // New Chat Modal Elements
+  const newChatBtn = document.getElementById('newChatBtn');
+  const newChatModal = document.getElementById('newChatModal');
+  const closeNewChatModal = document.getElementById('closeNewChatModal');
+  const cancelNewChat = document.getElementById('cancelNewChat');
+  const sendNewChat = document.getElementById('sendNewChat');
+  const newChatPhone = document.getElementById('newChatPhone');
+  const newChatMessage = document.getElementById('newChatMessage');
+
+
   let chats = [];
   let allMessages = []; // store all loaded messages for search
   let selectedChat = null;
@@ -1165,18 +1175,661 @@
         if (j.error) return alert(j.error);
 
         const parts = j.participants || [];
-        // Construct mention string: @user1 @user2 ...
-        // We use the ID (without @c.us) to make it cleaner if possible, or usually just @number
-        const mentionText = parts.map(p => '@' + p.id.split('@')[0]).join(' ');
 
-        messageInput.value = (messageInput.value ? messageInput.value + ' ' : '') + mentionText;
+        // IMPORTANT: Populate the mentions input field with full IDs
+        // This is required for the API to actually tag/notify the users
+        const mentionsInputField = document.getElementById('mentionsInput');
+        if (mentionsInputField) {
+          // Show the mentions container
+          const mentionsContainer = document.getElementById('mentionsContainer');
+          if (mentionsContainer) {
+            mentionsContainer.style.display = '';
+          }
+
+          // Fill with comma-separated full IDs (e.g. "6281234@c.us, 6285678@c.us")
+          mentionsInputField.value = parts.map(p => p.id).join(', ');
+        }
+
+        // Add clean mention text to message input - just @ instead of listing all numbers
+        // WhatsApp will still send notifications to all participants because of the mentions array
+        messageInput.value = (messageInput.value ? messageInput.value + ' ' : '') + '@ ';
         messageInput.focus();
-        // Trigger input event to update mentions UI if needed (though we just filled it)
+
+        logEvent(`Mention All: ${parts.length} participants will be notified`);
       } catch (e) {
         alert('Error fetching participants: ' + e.message);
       }
     };
   }
+
+  // ===== NEW CHAT FEATURE =====
+
+  // Function to format phone number to WhatsApp format
+  function formatPhoneToWhatsApp(phone) {
+    // Remove all non-digit characters
+    let cleaned = phone.replace(/\D/g, '');
+
+    // If starts with 0, replace with 62 (Indonesia)
+    if (cleaned.startsWith('0')) {
+      cleaned = '62' + cleaned.substring(1);
+    }
+
+    // If doesn't start with country code, assume Indonesia (62)
+    if (!cleaned.startsWith('62') && cleaned.length >= 9) {
+      cleaned = '62' + cleaned;
+    }
+
+    // Add @c.us suffix for WhatsApp format
+    return cleaned + '@c.us';
+  }
+
+  // Open New Chat Modal
+  newChatBtn.onclick = () => {
+    newChatModal.style.display = 'flex';
+    newChatPhone.value = '';
+    newChatMessage.value = '';
+    newChatPhone.focus();
+  };
+
+  // Close New Chat Modal
+  function closeModal() {
+    newChatModal.style.display = 'none';
+  }
+
+  closeNewChatModal.onclick = closeModal;
+  cancelNewChat.onclick = closeModal;
+
+  // Close modal when clicking outside
+  newChatModal.onclick = (e) => {
+    if (e.target === newChatModal) {
+      closeModal();
+    }
+  };
+
+  // Send New Chat Message
+  sendNewChat.onclick = async () => {
+    const phone = newChatPhone.value.trim();
+    const message = newChatMessage.value.trim();
+
+    // Validation
+    if (!phone) {
+      alert('Please enter a phone number');
+      newChatPhone.focus();
+      return;
+    }
+
+    if (!message) {
+      alert('Please enter a message');
+      newChatMessage.focus();
+      return;
+    }
+
+    // Format phone to WhatsApp format
+    const whatsappId = formatPhoneToWhatsApp(phone);
+
+    // Disable button to prevent double-click
+    sendNewChat.disabled = true;
+    sendNewChat.textContent = 'Sending...';
+
+    try {
+      const response = await fetch('/send?client=' + encodeURIComponent(selectedClient) + '&api_key=' + currentApiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: whatsappId,
+          message: message
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        logEvent('New chat started: ' + whatsappId);
+
+        // Close modal
+        closeModal();
+
+        // Reload chats to show the new chat
+        await loadChats();
+
+        // Try to select the new chat
+        const newChat = chats.find(c => c.id === whatsappId);
+        if (newChat) {
+          selectChat(newChat);
+        }
+
+        // Show success message
+        alert('Message sent successfully! ✅');
+      } else {
+        throw new Error(result.error || 'Failed to send message');
+      }
+    } catch (error) {
+      logEvent('New chat error: ' + error.message);
+      alert('Failed to send message: ' + error.message);
+    } finally {
+      // Re-enable button
+      sendNewChat.disabled = false;
+      sendNewChat.textContent = 'Send Message';
+    }
+  };
+
+  // Allow Enter key to submit in message textarea (Shift+Enter for new line)
+  newChatMessage.onkeydown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendNewChat.click();
+    }
+  };
+
+  // Auto-format phone number as user types (add spaces for readability)
+  newChatPhone.oninput = (e) => {
+    // Just basic cleanup - don't reformat while typing as it can be annoying
+    // We'll format it properly when sending
+  };
+
+  // ===== END NEW CHAT FEATURE =====
+
+  // ===== ADDITIONAL FEATURES =====
+
+  // Helper to show/hide panels based on chat selection
+  function updatePanelVisibility() {
+    const chatActionsPanel = document.getElementById('chatActions');
+    const messageActionsPanel = document.getElementById('messageActions');
+
+    if (selectedChat) {
+      if (chatActionsPanel) chatActionsPanel.style.display = '';
+      if (messageActionsPanel) messageActionsPanel.style.display = '';
+    } else {
+      if (chatActionsPanel) chatActionsPanel.style.display = 'none';
+      if (messageActionsPanel) messageActionsPanel.style.display = 'none';
+    }
+  }
+
+  // Patch selectChat to update panel visibility
+  const originalSelectChat = selectChat;
+  window.selectChatWithPanels = function (c) {
+    originalSelectChat(c);
+    updatePanelVisibility();
+  };
+
+  // === BLOCK/UNBLOCK CONTACT ===
+  const blockBtn = document.getElementById('blockContactBtn');
+  const unblockBtn = document.getElementById('unblockContactBtn');
+
+  if (blockBtn) {
+    blockBtn.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      try {
+        const res = await fetch(`/contact/${encodeURIComponent(selectedChat.id)}/block?client=${selectedClient}&api_key=${currentApiKey}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          alert('Contact blocked ✅');
+          logEvent('Blocked: ' + selectedChat.id);
+        } else {
+          alert('Failed: ' + data.error);
+        }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  if (unblockBtn) {
+    unblockBtn.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      try {
+        const res = await fetch(`/contact/${encodeURIComponent(selectedChat.id)}/unblock?client=${selectedClient}&api_key=${currentApiKey}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          alert('Contact unblocked ✅');
+          logEvent('Unblocked: ' + selectedChat.id);
+        } else {
+          alert('Failed: ' + data.error);
+        }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // === SET STATUS ===
+  const setStatusBtn = document.getElementById('setStatusBtn');
+  const myStatusInput = document.getElementById('myStatusInput');
+
+  if (setStatusBtn && myStatusInput) {
+    setStatusBtn.onclick = async () => {
+      const message = myStatusInput.value.trim();
+      if (!message) return alert('Enter a status message');
+      try {
+        const res = await fetch(`/status?client=${selectedClient}&api_key=${currentApiKey}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Status updated ✅');
+          logEvent('Status set: ' + message);
+          myStatusInput.value = '';
+        } else {
+          alert('Failed: ' + data.error);
+        }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // === MODAL HELPERS ===
+  function openModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) modal.style.display = 'flex';
+  }
+  function closeModalById(id) {
+    const modal = document.getElementById(id);
+    if (modal) modal.style.display = 'none';
+  }
+
+  // Close modals on X button click
+  document.querySelectorAll('.modal-close').forEach(btn => {
+    btn.onclick = () => btn.closest('.modal-overlay').style.display = 'none';
+  });
+
+  // Close modals on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(modal => {
+    modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+  });
+
+  // === SEND LOCATION ===
+  const sendLocationBtn = document.getElementById('sendLocationBtn');
+  const sendLocationSubmit = document.getElementById('sendLocationSubmit');
+
+  if (sendLocationBtn) sendLocationBtn.onclick = () => openModal('locationModal');
+
+  if (sendLocationSubmit) {
+    sendLocationSubmit.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      const lat = parseFloat(document.getElementById('locationLat').value);
+      const lng = parseFloat(document.getElementById('locationLng').value);
+      const address = document.getElementById('locationAddress').value.trim();
+
+      if (isNaN(lat) || isNaN(lng)) return alert('Enter valid latitude and longitude');
+
+      try {
+        const res = await fetch(`/send-location?client=${selectedClient}&api_key=${currentApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: selectedChat.id, latitude: lat, longitude: lng, address })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Location sent ✅');
+          closeModalById('locationModal');
+          logEvent('Location sent to ' + selectedChat.id);
+        } else { alert('Failed: ' + data.error); }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // === SEND CONTACT ===
+  const sendContactBtn = document.getElementById('sendContactBtn');
+  const sendContactSubmit = document.getElementById('sendContactSubmit');
+
+  if (sendContactBtn) sendContactBtn.onclick = () => openModal('contactModal');
+
+  if (sendContactSubmit) {
+    sendContactSubmit.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      let contactNumber = document.getElementById('contactNumber').value.trim();
+      const displayName = document.getElementById('contactName').value.trim();
+
+      if (!contactNumber) return alert('Enter contact number');
+      if (!contactNumber.includes('@')) contactNumber += '@c.us';
+
+      try {
+        const res = await fetch(`/send-contact?client=${selectedClient}&api_key=${currentApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: selectedChat.id, contactNumber, displayName })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Contact sent ✅');
+          closeModalById('contactModal');
+          logEvent('Contact sent to ' + selectedChat.id);
+        } else { alert('Failed: ' + data.error); }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // === SEND POLL ===
+  const sendPollBtn = document.getElementById('sendPollBtn');
+  const sendPollSubmit = document.getElementById('sendPollSubmit');
+
+  if (sendPollBtn) sendPollBtn.onclick = () => openModal('pollModal');
+
+  if (sendPollSubmit) {
+    sendPollSubmit.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      const question = document.getElementById('pollQuestion').value.trim();
+      const optionsText = document.getElementById('pollOptions').value.trim();
+      const allowMultiple = document.getElementById('pollMultiple').checked;
+
+      if (!question) return alert('Enter poll question');
+      const options = optionsText.split('\n').map(o => o.trim()).filter(o => o);
+      if (options.length < 2) return alert('Enter at least 2 options');
+
+      try {
+        const res = await fetch(`/send-poll?client=${selectedClient}&api_key=${currentApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: selectedChat.id, question, options, allowMultipleAnswers: allowMultiple })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Poll sent ✅');
+          closeModalById('pollModal');
+          logEvent('Poll sent to ' + selectedChat.id);
+        } else { alert('Failed: ' + data.error); }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // === SEND STICKER ===
+  const sendStickerBtn = document.getElementById('sendStickerBtn');
+  const stickerFile = document.getElementById('stickerFile');
+
+  if (sendStickerBtn) sendStickerBtn.onclick = () => stickerFile?.click();
+
+  if (stickerFile) {
+    stickerFile.onchange = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      if (!stickerFile.files.length) return;
+
+      const file = stickerFile.files[0];
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64 = e.target.result.split(',')[1];
+        try {
+          const res = await fetch(`/send-sticker?client=${selectedClient}&api_key=${currentApiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to: selectedChat.id, data: base64 })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('Sticker sent ✅');
+            logEvent('Sticker sent to ' + selectedChat.id);
+          } else { alert('Failed: ' + data.error); }
+        } catch (e) { alert('Error: ' + e.message); }
+        stickerFile.value = '';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+
+  // === GROUP: GET INVITE LINK ===
+  const getInviteLinkBtn = document.getElementById('getInviteLinkBtn');
+  const inviteLinkDisplay = document.getElementById('inviteLinkDisplay');
+
+  if (getInviteLinkBtn) {
+    getInviteLinkBtn.onclick = async () => {
+      if (!selectedChat || !selectedChat.isGroup) return alert('Select a group first');
+      try {
+        const res = await fetch(`/group/${encodeURIComponent(selectedChat.id)}/invite?client=${selectedClient}&api_key=${currentApiKey}`);
+        const data = await res.json();
+        if (data.inviteLink) {
+          inviteLinkDisplay.value = data.inviteLink;
+          navigator.clipboard.writeText(data.inviteLink);
+          alert('Invite link copied to clipboard! ✅');
+          logEvent('Got invite link: ' + data.inviteLink);
+        } else { alert('Failed: ' + (data.error || 'No link returned')); }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // === GROUP: JOIN BY INVITE ===
+  const joinGroupBtn = document.getElementById('joinGroupBtn');
+  const joinGroupInput = document.getElementById('joinGroupInput');
+
+  if (joinGroupBtn) {
+    joinGroupBtn.onclick = async () => {
+      const invite = joinGroupInput?.value.trim();
+      if (!invite) return alert('Paste an invite link or code');
+      try {
+        const res = await fetch(`/group/join?client=${selectedClient}&api_key=${currentApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invite })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Joined group! ✅');
+          joinGroupInput.value = '';
+          loadChats();
+          logEvent('Joined group: ' + invite);
+        } else { alert('Failed: ' + data.error); }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // === GROUP: UPDATE INFO ===
+  const updateGroupInfoBtn = document.getElementById('updateGroupInfoBtn');
+
+  if (updateGroupInfoBtn) {
+    updateGroupInfoBtn.onclick = async () => {
+      if (!selectedChat || !selectedChat.isGroup) return alert('Select a group first');
+      const subject = document.getElementById('groupSubjectInput')?.value.trim();
+      const description = document.getElementById('groupDescInput')?.value.trim();
+
+      if (!subject && !description) return alert('Enter new name or description');
+
+      try {
+        const res = await fetch(`/group/${encodeURIComponent(selectedChat.id)}/info?client=${selectedClient}&api_key=${currentApiKey}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subject, description })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Group info updated! ✅');
+          loadChats();
+          logEvent('Updated group info');
+        } else { alert('Failed: ' + data.error); }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // === CHANNEL: CREATE ===
+  const createChannelBtn = document.getElementById('createChannelBtn');
+  const createChannelSubmit = document.getElementById('createChannelSubmit');
+
+  if (createChannelBtn) createChannelBtn.onclick = () => openModal('channelModal');
+
+  if (createChannelSubmit) {
+    createChannelSubmit.onclick = async () => {
+      const title = document.getElementById('channelTitle')?.value.trim();
+      const description = document.getElementById('channelDesc')?.value.trim();
+
+      if (!title) return alert('Enter channel title');
+
+      try {
+        const res = await fetch(`/channel/create?client=${selectedClient}&api_key=${currentApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, description })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Channel created! ✅');
+          closeModalById('channelModal');
+          logEvent('Channel created: ' + title);
+        } else { alert('Failed: ' + data.error); }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // === CHANNEL: SEARCH ===
+  const searchChannelsBtn = document.getElementById('searchChannelsBtn');
+  const channelSearchResults = document.getElementById('channelSearchResults');
+
+  if (searchChannelsBtn) {
+    searchChannelsBtn.onclick = async () => {
+      const query = document.getElementById('channelSearchInput')?.value.trim();
+      if (!query) return alert('Enter search term');
+
+      try {
+        const res = await fetch(`/channel/search?client=${selectedClient}&api_key=${currentApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (data.channels && data.channels.length > 0) {
+          channelSearchResults.innerHTML = data.channels.map(ch =>
+            `<div style="padding:5px;border-bottom:1px solid #333;cursor:pointer" onclick="alert('Channel: ${ch.name || ch.id}')">${ch.name || ch.id}</div>`
+          ).join('');
+          logEvent('Found ' + data.channels.length + ' channels');
+        } else {
+          channelSearchResults.innerHTML = '<div style="color:#999">No channels found</div>';
+        }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // ===== ADDITIONAL CHAT ACTION HANDLERS =====
+
+  // Archive chat
+  const archiveChatBtn = document.getElementById('archiveChatBtn');
+  if (archiveChatBtn) {
+    archiveChatBtn.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      try {
+        const res = await fetch(`/chat/${encodeURIComponent(selectedChat.id)}/archive?client=${encodeURIComponent(selectedClient)}&api_key=${currentApiKey}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { logEvent('Chat archived'); alert('Chat archived! ✅'); loadChats(); }
+        else throw new Error(data.error);
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // Unarchive chat
+  const unarchiveChatBtn = document.getElementById('unarchiveChatBtn');
+  if (unarchiveChatBtn) {
+    unarchiveChatBtn.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      try {
+        const res = await fetch(`/chat/${encodeURIComponent(selectedChat.id)}/unarchive?client=${encodeURIComponent(selectedClient)}&api_key=${currentApiKey}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { logEvent('Chat unarchived'); alert('Chat unarchived! ✅'); }
+        else throw new Error(data.error);
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // Pin chat
+  const pinChatBtn = document.getElementById('pinChatBtn');
+  if (pinChatBtn) {
+    pinChatBtn.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      try {
+        const res = await fetch(`/chat/${encodeURIComponent(selectedChat.id)}/pin?client=${encodeURIComponent(selectedClient)}&api_key=${currentApiKey}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { logEvent('Chat pinned'); alert('Chat pinned! 📌'); loadChats(); }
+        else throw new Error(data.error);
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // Unpin chat
+  const unpinChatBtn = document.getElementById('unpinChatBtn');
+  if (unpinChatBtn) {
+    unpinChatBtn.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      try {
+        const res = await fetch(`/chat/${encodeURIComponent(selectedChat.id)}/unpin?client=${encodeURIComponent(selectedClient)}&api_key=${currentApiKey}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { logEvent('Chat unpinned'); alert('Chat unpinned! ✅'); loadChats(); }
+        else throw new Error(data.error);
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // Mark as read (seen)
+  const markSeenBtn = document.getElementById('markSeenBtn');
+  if (markSeenBtn) {
+    markSeenBtn.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      try {
+        const res = await fetch(`/chat/${encodeURIComponent(selectedChat.id)}/seen?client=${encodeURIComponent(selectedClient)}&api_key=${currentApiKey}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { logEvent('Marked as read'); alert('Marked as read! ✅'); loadChats(); }
+        else throw new Error(data.error);
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // Mark as unread
+  const markUnreadBtn = document.getElementById('markUnreadBtn');
+  if (markUnreadBtn) {
+    markUnreadBtn.onclick = async () => {
+      if (!selectedChat) return alert('Select a chat first');
+      try {
+        const res = await fetch(`/chat/${encodeURIComponent(selectedChat.id)}/unread?client=${encodeURIComponent(selectedClient)}&api_key=${currentApiKey}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { logEvent('Marked as unread'); alert('Marked as unread! ✅'); loadChats(); }
+        else throw new Error(data.error);
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // Search messages
+  const searchMsgBtn = document.getElementById('searchMsgBtn');
+  const searchMsgInput = document.getElementById('searchMsgInput');
+  const searchMsgResults = document.getElementById('searchMsgResults');
+  if (searchMsgBtn && searchMsgInput && searchMsgResults) {
+    searchMsgBtn.onclick = async () => {
+      const query = searchMsgInput.value.trim();
+      if (!query) return alert('Enter search query');
+      try {
+        let url = `/messages/search?query=${encodeURIComponent(query)}&client=${encodeURIComponent(selectedClient)}&api_key=${currentApiKey}`;
+        if (selectedChat) url += `&chatId=${encodeURIComponent(selectedChat.id)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.messages && data.messages.length > 0) {
+          searchMsgResults.innerHTML = data.messages.map(m =>
+            `<div style="padding:3px;border-bottom:1px solid #333;">${m.body ? m.body.substring(0, 50) : '...'}</div>`
+          ).join('');
+          logEvent('Found ' + data.messages.length + ' messages');
+        } else {
+          searchMsgResults.innerHTML = '<div style="color:#999">No results</div>';
+        }
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // Create group
+  const createGroupBtn = document.getElementById('createGroupBtn');
+  const newGroupTitle = document.getElementById('newGroupTitle');
+  const newGroupParticipants = document.getElementById('newGroupParticipants');
+  if (createGroupBtn && newGroupTitle) {
+    createGroupBtn.onclick = async () => {
+      const title = newGroupTitle.value.trim();
+      if (!title) return alert('Enter group title');
+      const participants = newGroupParticipants ? newGroupParticipants.value.split(',').map(p => p.trim()).filter(p => p) : [];
+      try {
+        const res = await fetch(`/group/create?client=${encodeURIComponent(selectedClient)}&api_key=${currentApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, participants })
+        });
+        const data = await res.json();
+        if (data.success) {
+          logEvent('Group created: ' + data.groupId);
+          alert('Group created! ✅');
+          newGroupTitle.value = '';
+          if (newGroupParticipants) newGroupParticipants.value = '';
+          loadChats();
+        } else throw new Error(data.error);
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+  }
+
+  // ===== END ADDITIONAL FEATURES =====
+
 
   // init
   initMediaObserver(); // Initialize Intersection Observer for media lazy loading

@@ -422,34 +422,54 @@ select:focus {
 
 /* Right Info Panel (Events/Group Actions) */
 .right-panel {
-  width: 300px;
+  width: 280px;
+  min-width: 280px;
   background-color: var(--sidebar-bg);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(100vh - 60px);
 }
 
 .panel-section {
-  padding: 15px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .panel-section h4 {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   color: var(--text-secondary);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
+.panel-section button {
+  font-size: 0.8rem;
+  padding: 5px 8px;
+}
+
+.panel-section input,
+.panel-section textarea {
+  font-size: 0.8rem;
+  padding: 6px 8px;
+}
+
+.panel-section label {
+  font-size: 0.75rem;
+}
+
 #events {
-  height: 250px;
+  height: 150px;
   overflow-y: auto;
   font-family: monospace;
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   color: #0f0;
   background: #000;
-  padding: 10px;
+  padding: 8px;
   border-radius: 4px;
 }
 

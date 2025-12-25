@@ -1696,6 +1696,262 @@ app.post('/channel/search', requireApiKey, async (req, res) => {
   }
 });
 
+// ===== ADDITIONAL WHATSAPP-WEB.JS FEATURES =====
+
+// Archive chat
+app.post('/chat/:id/archive', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const chat = await c.getChatById(req.params.id);
+    await chat.archive();
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Unarchive chat
+app.post('/chat/:id/unarchive', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const chat = await c.getChatById(req.params.id);
+    await chat.unarchive();
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Pin chat
+app.post('/chat/:id/pin', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const chat = await c.getChatById(req.params.id);
+    const result = await chat.pin();
+    res.json({ success: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Unpin chat
+app.post('/chat/:id/unpin', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const chat = await c.getChatById(req.params.id);
+    const result = await chat.unpin();
+    res.json({ success: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Mark chat as unread
+app.post('/chat/:id/unread', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    await c.markChatUnread(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Send seen (mark as read)
+app.post('/chat/:id/seen', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const result = await c.sendSeen(req.params.id);
+    res.json({ success: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Create group
+app.post('/group/create', requireApiKey, async (req, res) => {
+  try {
+    const { title, participants } = req.body;
+    if (!title) return res.status(400).json({ error: 'title required' });
+    const c = clients.get(req.clientId).client;
+    const result = await c.createGroup(title, participants || []);
+    res.json({ success: true, groupId: result.gid?._serialized || result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get group membership requests
+app.get('/group/:id/requests', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const requests = await c.getGroupMembershipRequests(req.params.id);
+    res.json({ requests });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Approve group membership requests
+app.post('/group/:id/requests/approve', requireApiKey, async (req, res) => {
+  try {
+    const { requesters } = req.body;
+    const c = clients.get(req.clientId).client;
+    const options = requesters ? { requesterIds: requesters } : {};
+    const result = await c.approveGroupMembershipRequests(req.params.id, options);
+    res.json({ success: true, result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Reject group membership requests
+app.post('/group/:id/requests/reject', requireApiKey, async (req, res) => {
+  try {
+    const { requesters } = req.body;
+    const c = clients.get(req.clientId).client;
+    const options = requesters ? { requesterIds: requesters } : {};
+    const result = await c.rejectGroupMembershipRequests(req.params.id, options);
+    res.json({ success: true, result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get blocked contacts
+app.get('/contacts/blocked', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const blocked = await c.getBlockedContacts();
+    res.json({
+      contacts: blocked.map(ct => ({
+        id: ct.id._serialized,
+        name: ct.name,
+        pushname: ct.pushname,
+        number: ct.number
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delete profile picture
+app.delete('/profile/picture', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const result = await c.deleteProfilePicture();
+    res.json({ success: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Set profile picture
+app.put('/profile/picture', requireApiKey, async (req, res) => {
+  try {
+    const { data, mimetype } = req.body;
+    if (!data) return res.status(400).json({ error: 'data (base64) required' });
+    const c = clients.get(req.clientId).client;
+    const media = new MessageMedia(mimetype || 'image/jpeg', data);
+    const result = await c.setProfilePicture(media);
+    res.json({ success: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Search messages
+app.get('/messages/search', requireApiKey, async (req, res) => {
+  try {
+    const { query, chatId, limit } = req.query;
+    if (!query) return res.status(400).json({ error: 'query required' });
+    const c = clients.get(req.clientId).client;
+    const options = {};
+    if (chatId) options.chatId = chatId;
+    if (limit) options.limit = parseInt(limit);
+    const messages = await c.searchMessages(query, options);
+    res.json({
+      messages: messages.map(m => ({
+        id: m.id._serialized,
+        from: m.from,
+        to: m.to,
+        body: m.body,
+        timestamp: m.timestamp
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Set presence available
+app.post('/presence/available', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    await c.sendPresenceAvailable();
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Set presence unavailable
+app.post('/presence/unavailable', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    await c.sendPresenceUnavailable();
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delete channel
+app.delete('/channel/:id', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const result = await c.deleteChannel(req.params.id);
+    res.json({ success: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get labels (WhatsApp Business)
+app.get('/labels', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const labels = await c.getLabels();
+    res.json({
+      labels: labels.map(l => ({
+        id: l.id,
+        name: l.name,
+        hexColor: l.hexColor
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get chats by label
+app.get('/labels/:id/chats', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const chats = await c.getChatsByLabelId(req.params.id);
+    res.json({
+      chats: chats.map(ch => ({
+        id: ch.id._serialized,
+        name: ch.name,
+        isGroup: ch.isGroup
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Assign labels to chats
+app.post('/labels/assign', requireApiKey, async (req, res) => {
+  try {
+    const { labelIds, chatIds } = req.body;
+    if (!labelIds || !chatIds) return res.status(400).json({ error: 'labelIds and chatIds required' });
+    const c = clients.get(req.clientId).client;
+    await c.addOrRemoveLabels(labelIds, chatIds);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Create call link
+app.post('/call/link', requireApiKey, async (req, res) => {
+  try {
+    const { callType, startTime } = req.body;
+    const c = clients.get(req.clientId).client;
+    const start = startTime ? new Date(startTime) : new Date();
+    const link = await c.createCallLink(start, callType || 'video');
+    res.json({ success: true, link });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get broadcasts
+app.get('/broadcasts', requireApiKey, async (req, res) => {
+  try {
+    const c = clients.get(req.clientId).client;
+    const broadcasts = await c.getBroadcasts();
+    res.json({
+      broadcasts: broadcasts.map(b => ({
+        id: b.id._serialized,
+        name: b.name
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ===== END ADDITIONAL FEATURES =====
+
 // Run migration and then start server
 (async () => {
   await migrateSqliteToPostgres();
